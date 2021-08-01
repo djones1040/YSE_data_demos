@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import requests
 from lxml import html
@@ -58,6 +59,8 @@ if __name__ == "__main__":
     skycell = getskycell(sc.ra.deg,sc.dec.deg)[0]
     print(f"skycell: {skycell}")
 
+    tgzfiles = glob.glob(f"/lustre/hpc/storage/dark/YSE/raw_YSE_data/*.warp.*/*{float(skycell)}.tgz")
+
     my_output_dir = 'output'
     if not os.path.exists(my_output_dir):
         os.makedirs(my_output_dir)
@@ -70,6 +73,30 @@ if __name__ == "__main__":
     # just get the first 10 for now
     for t in tgzfiles[0:10]:
         tarDocument = tarfile.open(t)
-        for suffix in ['fits','wt.fits','mask.fits']:
-            if re.search(suffix2searchstring[suffix],item.name):
-                tarDocument.extract(item,my_output_dir)
+        for item in tarDocument:
+            for suffix in ['fits','wt.fits','mask.fits']:
+                if re.search(suffix2searchstring[suffix],item.name):
+                    tarDocument.extract(item,my_output_dir)
+
+    # let's use a batch script to get the next 10
+    batch_header = """#!/bin/bash
+#SBATCH -o yse_data_copy.%i.stdout
+#SBATCH -e yse_data_copy.%i.stderr
+#SBATCH -p dark
+#SBATCH --nodes 1
+#SBATCH --ntasks-per-node 1
+#SBATCH --ntasks-per-core 1
+#SBATCH --mem-per-cpu 2000
+#SBATCH --time=06:00:00"""
+
+    for i,t in enumerate(tgzfiles[10:11]):
+        print(t)
+        # I put the above lines into a short script that can be run at
+        # the command line
+        batch_cmd = f"python get_YSE_tarball.py {t} {my_output_dir}"
+
+        with open(f'batch_data_job_{i}.sh','w') as fout:
+            print(batch_header%(i,i),file=fout)
+            print(batch_cmd,file=fout)
+            print('',file=fout)
+        os.system(f'sbatch batch_data_job_{i}.sh')
